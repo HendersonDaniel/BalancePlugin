@@ -10,11 +10,13 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.entity.SpawnerSpawnEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.ItemType;
 import org.bukkit.inventory.MerchantInventory;
 import org.bukkit.inventory.MerchantRecipe;
 import org.bukkit.persistence.PersistentDataType;
@@ -45,6 +47,20 @@ public class BalanceListener implements Listener {
 
     public BalanceListener(JavaPlugin plugin) {
         this.plugin = plugin;
+    }
+
+
+    // block iron, gold, and totem drops
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEntityDeath(EntityDeathEvent event) {
+        event.getDrops().removeIf(item -> item != null && item.getType() == Material.TOTEM_OF_UNDYING);
+        if (event.getEntity().getType() == EntityType.IRON_GOLEM) {
+            event.getDrops().removeIf(item -> item != null && item.getType() == Material.IRON_INGOT);
+        }
+        if (event.getEntity().getType() == EntityType.ZOMBIFIED_PIGLIN) {
+            event.getDrops().removeIf(item -> item != null
+                    && (item.getType() == Material.GOLD_NUGGET || item.getType() == Material.GOLD_INGOT));
+        }
     }
 
     // ── 2. Block villager and zombie piglin spawners ──────────────────────────
