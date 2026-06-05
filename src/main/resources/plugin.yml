@@ -1,0 +1,6 @@
+name: BalancePlugin
+version: 1.0
+main: com.balanceplugin.BalancePlugin
+api-version: "1.21.4"
+softdepend: [AdminPlugin]
+description: Gold economy balance — removes mesa gold and mending; blocks villager/piglin spawners
