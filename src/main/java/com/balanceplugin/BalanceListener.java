@@ -1,5 +1,6 @@
 package com.balanceplugin;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -10,13 +11,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntityPotionEffectEvent;
-import org.bukkit.event.entity.SpawnerSpawnEvent;
+import org.bukkit.event.enchantment.EnchantItemEvent;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.ItemType;
 import org.bukkit.inventory.MerchantInventory;
 import org.bukkit.inventory.MerchantRecipe;
 import org.bukkit.persistence.PersistentDataType;
@@ -47,6 +46,45 @@ public class BalanceListener implements Listener {
 
     public BalanceListener(JavaPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    @EventHandler
+    public void onEnchantApplyOldEnchantmentCost(EnchantItemEvent event) {
+        Player player = event.getEnchanter();
+
+        int cost = event.getExpLevelCost();
+        int vanillaCost = event.whichButton() + 1;
+        int extraLevelCost = cost - vanillaCost;
+
+
+        if (extraLevelCost <= 0) return;
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline()) return;
+
+            int newLevel = Math.max(0, player.getLevel() - extraLevelCost);
+            player.setLevel(newLevel);
+
+        });
+
+    }
+
+    @EventHandler
+    public void onVillagerCareerChange(VillagerCareerChangeEvent event) {
+        Villager villager = event.getEntity();
+
+        if (villager.getProfession() != Villager.Profession.NONE) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onVillagerBreed(EntityBreedEvent event) {
+        if (event.getEntity() instanceof Villager) {
+            if (Math.random() > 0.25d) {
+                event.setCancelled(true);
+            }
+        }
     }
 
 
