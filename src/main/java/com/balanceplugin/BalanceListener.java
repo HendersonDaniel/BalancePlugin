@@ -1,38 +1,38 @@
 package com.balanceplugin;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Villager;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
-import org.bukkit.event.Listener;
+import org.bukkit.*;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.*;
+import org.bukkit.event.*;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.*;
-import org.bukkit.event.inventory.InventoryOpenEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.MerchantInventory;
-import org.bukkit.inventory.MerchantRecipe;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.*;
+import org.bukkit.event.world.LootGenerateEvent;
+import org.bukkit.inventory.*;
+import org.bukkit.inventory.meta.*;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.potion.PotionType;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import org.bukkit.NamespacedKey;
 
 public class BalanceListener implements Listener {
 
     private static final NamespacedKey RECIPES_DOUBLED_KEY = new NamespacedKey("balanceplugin", "recipes_doubled");
 
     private final JavaPlugin plugin;
+    // tracks players who just drank an instant damage potion so we can halve the magic damage hit
+    private final Set<UUID> pendingInstantDmgHalf = new HashSet<>();
 
     private static final Set<EntityType> BLOCKED_SPAWNER_TYPES = EnumSet.of(
             EntityType.VILLAGER,
@@ -48,32 +48,26 @@ public class BalanceListener implements Listener {
         this.plugin = plugin;
     }
 
+    // ── 1. 1.7-style enchant XP cost ─────────────────────────────────────────
+
     @EventHandler
     public void onEnchantApplyOldEnchantmentCost(EnchantItemEvent event) {
         Player player = event.getEnchanter();
-
         int cost = event.getExpLevelCost();
         int vanillaCost = event.whichButton() + 1;
         int extraLevelCost = cost - vanillaCost;
-
-
         if (extraLevelCost <= 0) return;
-
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline()) return;
-
-            int newLevel = Math.max(0, player.getLevel() - extraLevelCost);
-            player.setLevel(newLevel);
-
+            player.setLevel(Math.max(0, player.getLevel() - extraLevelCost));
         });
-
     }
+
+    // ── 2. Villager profession lock and breeding nerf ─────────────────────────
 
     @EventHandler
     public void onVillagerCareerChange(VillagerCareerChangeEvent event) {
-        Villager villager = event.getEntity();
-
-        if (villager.getProfession() != Villager.Profession.NONE) {
+        if (event.getEntity().getProfession() != Villager.Profession.NONE) {
             event.setCancelled(true);
         }
     }
@@ -81,14 +75,12 @@ public class BalanceListener implements Listener {
     @EventHandler
     public void onVillagerBreed(EntityBreedEvent event) {
         if (event.getEntity() instanceof Villager) {
-            if (Math.random() > 0.25d) {
-                event.setCancelled(true);
-            }
+            if (Math.random() > 0.25d) event.setCancelled(true);
         }
     }
 
+    // ── 3. Mob drop removals ──────────────────────────────────────────────────
 
-    // block iron, gold, and totem drops
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
         event.getDrops().removeIf(item -> item != null && item.getType() == Material.TOTEM_OF_UNDYING);
@@ -101,7 +93,27 @@ public class BalanceListener implements Listener {
         }
     }
 
-    // ── 2. Block villager and zombie piglin spawners ──────────────────────────
+    // ── 4. Strip banned enchants from all generated loot (chests, structures) ─
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onLootGenerate(LootGenerateEvent event) {
+        for (ItemStack item : event.getLoot()) {
+            if (item == null || !item.hasItemMeta()) continue;
+            ItemMeta meta = item.getItemMeta();
+            boolean changed = false;
+            for (Enchantment banned : new Enchantment[]{
+                    Enchantment.MENDING,
+                    Enchantment.SWEEPING_EDGE,
+                    Enchantment.BINDING_CURSE,
+                    Enchantment.VANISHING_CURSE
+            }) {
+                if (meta.hasEnchant(banned)) { meta.removeEnchant(banned); changed = true; }
+            }
+            if (changed) item.setItemMeta(meta);
+        }
+    }
+
+    // ── 5. Block villager and zombie piglin spawners ──────────────────────────
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onSpawnEggOnSpawner(PlayerInteractEvent event) {
@@ -116,12 +128,10 @@ public class BalanceListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onSpawnerSpawn(SpawnerSpawnEvent event) {
-        if (BLOCKED_SPAWNER_TYPES.contains(event.getEntityType())) {
-            event.setCancelled(true);
-        }
+        if (BLOCKED_SPAWNER_TYPES.contains(event.getEntityType())) event.setCancelled(true);
     }
 
-    // ── 9. Dolphin's Grace and Hero of the Village disabled ───────────────────
+    // ── 6. Dolphin's Grace and Hero of the Village disabled ───────────────────
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEffectApply(EntityPotionEffectEvent event) {
@@ -135,7 +145,7 @@ public class BalanceListener implements Listener {
         }
     }
 
-    // ── 10. Villager trade price doubling (no discounts) ─────────────────────
+    // ── 7. Villager trade price doubling (no discounts) ──────────────────────
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onVillagerInventoryOpen(InventoryOpenEvent event) {
@@ -158,6 +168,41 @@ public class BalanceListener implements Listener {
         villager.getPersistentDataContainer().set(RECIPES_DOUBLED_KEY, PersistentDataType.INTEGER, currentCount);
     }
 
+    // ── 8. Instant Damage potion nerf — both drinkable and splash do 50% ─────
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onInstantDamageSplash(PotionSplashEvent event) {
+        if (!isInstantDamagePotion(event.getPotion().getItem())) return;
+        for (LivingEntity entity : event.getAffectedEntities()) {
+            event.setIntensity(entity, event.getIntensity(entity) * 0.5);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDrinkInstantDamage(PlayerItemConsumeEvent event) {
+        if (!isInstantDamagePotion(event.getItem())) return;
+        pendingInstantDmgHalf.add(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onInstantDamageMagicHit(EntityDamageEvent event) {
+        if (event.getCause() != EntityDamageEvent.DamageCause.MAGIC) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!pendingInstantDmgHalf.remove(player.getUniqueId())) return;
+        event.setDamage(event.getDamage() * 0.5);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private boolean isInstantDamagePotion(ItemStack item) {
+        if (item == null) return false;
+        Material type = item.getType();
+        if (type != Material.POTION && type != Material.SPLASH_POTION) return false;
+        if (!(item.getItemMeta() instanceof PotionMeta meta)) return false;
+        PotionType base = meta.getBasePotionType();
+        if (base == PotionType.HARMING || base == PotionType.STRONG_HARMING) return true;
+        return meta.getCustomEffects().stream().anyMatch(e -> e.getType().equals(PotionEffectType.INSTANT_DAMAGE));
+    }
 
     private MerchantRecipe doubleRecipePrice(MerchantRecipe old) {
         List<ItemStack> newIngredients = new ArrayList<>();
@@ -167,7 +212,6 @@ public class BalanceListener implements Listener {
             doubled.setAmount(Math.min(doubled.getAmount() * 2, doubled.getMaxStackSize()));
             newIngredients.add(doubled);
         }
-        // specialPrice = 0 suppresses hero of the village and zombie cure discounts
         MerchantRecipe recipe = new MerchantRecipe(
                 old.getResult().clone(),
                 old.getUses(),
