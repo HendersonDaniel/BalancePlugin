@@ -1,30 +1,37 @@
 package com.balanceplugin;
 
-import org.bukkit.*;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.enchantments.Enchantment;
-import org.bukkit.entity.*;
-import org.bukkit.event.*;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.Villager;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.*;
-import org.bukkit.event.inventory.*;
-import org.bukkit.event.player.*;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.world.LootGenerateEvent;
-import org.bukkit.inventory.*;
-import org.bukkit.inventory.meta.*;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.MerchantInventory;
+import org.bukkit.inventory.MerchantRecipe;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.potion.PotionType;
 
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import org.bukkit.NamespacedKey;
+import java.util.*;
 
 public class BalanceListener implements Listener {
 
@@ -42,6 +49,15 @@ public class BalanceListener implements Listener {
     private static final Set<Material> BLOCKED_SPAWN_EGGS = EnumSet.of(
             Material.VILLAGER_SPAWN_EGG,
             Material.ZOMBIFIED_PIGLIN_SPAWN_EGG
+    );
+
+    private static final Map<Enchantment, Integer> MAX_ALLOWED_BOOK_LEVELS = Map.of(
+            Enchantment.SHARPNESS, 1,
+            Enchantment.PROTECTION, 1,
+            Enchantment.UNBREAKING, 1,
+            Enchantment.FORTUNE, 1,
+            Enchantment.LOOTING, 1,
+            Enchantment.EFFICIENCY, 3
     );
 
     public BalanceListener(JavaPlugin plugin) {
@@ -77,6 +93,79 @@ public class BalanceListener implements Listener {
         if (event.getEntity() instanceof Villager) {
             if (Math.random() > 0.25d) event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onVillagerGainIllegalTrade(VillagerAcquireTradeEvent event) {
+        if(isBannedEnchantmentBookTradeResult(event.getRecipe().getResult())) {
+            event.setRecipe(createAllowedVillagerEnchantmentBookTradeRecipe(event.getRecipe()));
+        }
+    }
+
+    private MerchantRecipe createAllowedVillagerEnchantmentBookTradeRecipe(MerchantRecipe originalRecipe) {
+        ItemStack original = originalRecipe.getResult();
+        Map<Enchantment, Integer> enchantmentIntegerMap = ((EnchantmentStorageMeta) original.getItemMeta()).getStoredEnchants();
+
+        ItemStack output = new ItemStack(Material.ENCHANTED_BOOK);
+
+        EnchantmentStorageMeta meta = (EnchantmentStorageMeta) output.getItemMeta();
+
+        for (Map.Entry<Enchantment, Integer> entry : enchantmentIntegerMap.entrySet()) {
+            meta.addStoredEnchant(entry.getKey(), 1, false);
+        }
+
+
+
+        output.setItemMeta(meta);
+
+
+        plugin.getLogger().info(
+                "Old enchants: " + ((EnchantmentStorageMeta) original.getItemMeta()).getStoredEnchants().toString()
+                + "\nNew enchants: " + ((EnchantmentStorageMeta) output.getItemMeta()).getStoredEnchants().toString()
+
+        );
+
+        MerchantRecipe newRecipe = new MerchantRecipe(output,
+                originalRecipe.getUses(),
+                originalRecipe.getMaxUses(),
+                originalRecipe.hasExperienceReward(),
+                originalRecipe.getVillagerExperience(),
+                originalRecipe.getPriceMultiplier(),
+                originalRecipe.shouldIgnoreDiscounts()
+        );
+
+        List<ItemStack> ingredients = new ArrayList<>();
+
+        for (ItemStack ingredient : originalRecipe.getIngredients()) {
+            ingredients.add(ingredient.clone());
+        }
+
+        newRecipe.setIngredients(ingredients);
+
+        return newRecipe;
+    }
+
+    private boolean isBannedEnchantmentBookTradeResult(ItemStack itemStack) {
+        if (itemStack == null || itemStack.getType() != Material.ENCHANTED_BOOK) {
+            return false;
+        }
+
+        if (!(itemStack.getItemMeta() instanceof EnchantmentStorageMeta meta)) {
+            return false;
+        }
+
+        for (Map.Entry<Enchantment, Integer> entry : meta.getStoredEnchants().entrySet()) {
+            Enchantment enchantment = entry.getKey();
+            int level = entry.getValue();
+
+            Integer maxAllowedLevel = MAX_ALLOWED_BOOK_LEVELS.get(enchantment);
+
+            if (maxAllowedLevel != null && level > maxAllowedLevel) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ── 3. Mob drop removals ──────────────────────────────────────────────────
