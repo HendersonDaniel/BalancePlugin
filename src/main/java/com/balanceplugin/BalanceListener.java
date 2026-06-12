@@ -1,9 +1,6 @@
 package com.balanceplugin;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
+import org.bukkit.*;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
@@ -168,6 +165,16 @@ public class BalanceListener implements Listener {
         return false;
     }
 
+
+
+    @EventHandler
+    public void onMinecartChestSpawn(LootGenerateEvent event) {
+        Location loc = event.getEntity().getLocation();
+
+        if ((Math.abs(loc.getX()) - 512 <= 0) && (Math.abs(loc.getZ()) - 512 <= 0)) {
+            event.setLoot(List.of());
+        }
+    }
     // ── 3. Mob drop removals ──────────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
